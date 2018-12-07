@@ -20,18 +20,25 @@
 package org.elasticsearch.client;
 
 import org.apache.http.client.methods.HttpDelete;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.ContentType;
-import org.elasticsearch.client.watcher.DeactivateWatchRequest;
-import org.elasticsearch.client.watcher.ActivateWatchRequest;
 import org.elasticsearch.client.watcher.AckWatchRequest;
+import org.elasticsearch.client.watcher.ActivateWatchRequest;
+import org.elasticsearch.client.watcher.DeactivateWatchRequest;
+import org.elasticsearch.client.watcher.DeleteWatchRequest;
+import org.elasticsearch.client.watcher.ExecuteWatchRequest;
+import org.elasticsearch.client.watcher.GetWatchRequest;
+import org.elasticsearch.client.watcher.PutWatchRequest;
 import org.elasticsearch.client.watcher.StartWatchServiceRequest;
 import org.elasticsearch.client.watcher.StopWatchServiceRequest;
+import org.elasticsearch.client.watcher.WatcherStatsRequest;
 import org.elasticsearch.common.bytes.BytesReference;
-import org.elasticsearch.client.watcher.DeleteWatchRequest;
-import org.elasticsearch.client.watcher.PutWatchRequest;
+import org.elasticsearch.common.xcontent.XContentType;
+
+import java.io.IOException;
 
 final class WatcherRequestConverters {
 
@@ -74,6 +81,16 @@ final class WatcherRequestConverters {
         return request;
     }
 
+
+    static Request getWatch(GetWatchRequest getWatchRequest) {
+        String endpoint = new RequestConverters.EndpointBuilder()
+            .addPathPartAsIs("_xpack", "watcher", "watch")
+            .addPathPart(getWatchRequest.getId())
+            .build();
+
+        return new Request(HttpGet.METHOD_NAME, endpoint);
+    }
+
     static Request deactivateWatch(DeactivateWatchRequest deactivateWatchRequest) {
         String endpoint = new RequestConverters.EndpointBuilder()
             .addPathPartAsIs("_xpack")
@@ -95,6 +112,28 @@ final class WatcherRequestConverters {
         return request;
     }
 
+    static Request executeWatch(ExecuteWatchRequest executeWatchRequest) throws IOException {
+        String endpoint = new RequestConverters.EndpointBuilder()
+            .addPathPartAsIs("_xpack", "watcher", "watch")
+            .addPathPart(executeWatchRequest.getId())       // will ignore if ID is null
+            .addPathPartAsIs("_execute").build();
+
+        Request request = new Request(HttpPost.METHOD_NAME, endpoint);
+        RequestConverters.Params params = new RequestConverters.Params(request);
+        if (executeWatchRequest.isDebug()) {
+            params.putParam("debug", "true");
+        }
+        if (executeWatchRequest.ignoreCondition()) {
+            params.putParam("ignore_condition", "true");
+        }
+        if (executeWatchRequest.recordExecution()) {
+            params.putParam("record_execution", "true");
+        }
+
+        request.setEntity(RequestConverters.createEntity(executeWatchRequest, XContentType.JSON));
+        return request;
+    }
+
     public static Request ackWatch(AckWatchRequest ackWatchRequest) {
         String endpoint = new RequestConverters.EndpointBuilder()
             .addPathPartAsIs("_xpack", "watcher", "watch")
@@ -113,6 +152,27 @@ final class WatcherRequestConverters {
             .addPathPartAsIs("_activate")
             .build();
         Request request = new Request(HttpPut.METHOD_NAME, endpoint);
+        return request;
+    }
+
+    static Request watcherStats(WatcherStatsRequest watcherStatsRequest) {
+        RequestConverters.EndpointBuilder builder = new RequestConverters.EndpointBuilder().addPathPartAsIs("_xpack", "watcher", "stats");
+        String endpoint = builder.build();
+        Request request = new Request(HttpGet.METHOD_NAME, endpoint);
+        RequestConverters.Params parameters = new RequestConverters.Params(request);
+        StringBuilder metric = new StringBuilder();
+        if (watcherStatsRequest.includeCurrentWatches()) {
+            metric.append("current_watches");
+        }
+        if (watcherStatsRequest.includeQueuedWatches()) {
+            if (metric.length() > 0) {
+                metric.append(",");
+            }
+            metric.append("queued_watches");
+        }
+        if (metric.length() > 0) {
+            parameters.putParam("metric", metric.toString());
+        }
         return request;
     }
 }
